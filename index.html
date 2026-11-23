@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SuperGemini">
+<title>SuperGemini</title>
+<style>
+  * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  body { margin: 0; background: #0f1012; color: #e8eaed; display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
+  
+  header { padding: 14px 18px; background: #18191c; border-bottom: 1px solid #2a2b30; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+  .title { font-weight: 700; font-size: 17px; display: flex; align-items: center; gap: 8px; color: #8ab4f8; }
+  .header-btns { display: flex; gap: 8px; }
+  .icon-btn { background: #26282c; color: #e8eaed; border: 1px solid #35373d; padding: 6px 12px; border-radius: 10px; font-size: 13px; cursor: pointer; }
+  .icon-btn:active { opacity: 0.7; }
+
+  #chat { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; scroll-behavior: smooth; }
+  .msg { max-width: 85%; padding: 12px 16px; border-radius: 18px; line-height: 1.55; font-size: 15px; white-space: pre-wrap; word-wrap: break-word; }
+  .user { align-self: flex-end; background: #2b5278; color: #fff; border-bottom-right-radius: 4px; }
+  .ai { align-self: flex-start; background: #1e2024; border: 1px solid #2e3138; border-bottom-left-radius: 4px; }
+  .msg img { max-width: 220px; border-radius: 10px; display: block; margin-bottom: 8px; }
+  .loading { color: #8ab4f8; font-style: italic; }
+
+  #preview-box { display: none; padding: 8px 16px; background: #18191c; border-top: 1px solid #2a2b30; align-items: center; gap: 10px; }
+  #preview-img { height: 54px; border-radius: 8px; border: 1px solid #444; }
+  #remove-img { background: #d93025; color: #fff; border: none; border-radius: 50%; width: 24px; height: 24px; font-weight: bold; cursor: pointer; }
+
+  #input-bar { display: flex; gap: 8px; padding: 10px 14px 20px; background: #18191c; border-top: 1px solid #2a2b30; align-items: center; flex-shrink: 0; }
+  #prompt { flex: 1; padding: 12px 16px; border-radius: 22px; border: 1px solid #383a40; background: #0f1012; color: #fff; font-size: 16px; outline: none; }
+  #prompt:focus { border-color: #8ab4f8; }
+  .action-btn { background: #8ab4f8; color: #0f1012; border: none; padding: 11px 18px; border-radius: 22px; font-weight: 700; font-size: 15px; cursor: pointer; }
+  .photo-btn { background: #26282c; color: #e8eaed; padding: 10px 14px; border-radius: 22px; font-size: 18px; cursor: pointer; border: 1px solid #35373d; }
+
+  #modal { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: none; justify-content: center; align-items: center; z-index: 100; padding: 20px; }
+  .modal-card { background: #1e2024; padding: 22px; border-radius: 18px; width: 100%; max-width: 400px; border: 1px solid #35373d; }
+  .modal-card h3 { margin-top: 0; color: #8ab4f8; }
+  .modal-card input { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #444; background: #0f1012; color: #fff; margin: 10px 0 16px; font-size: 14px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="title">✨ SuperGemini</div>
+  <div class="header-btns">
+    <button class="icon-btn" onclick="clearChat()">🗑 Xóa chat</button>
+    <button class="icon-btn" onclick="openSettings()">⚙️ API Key</button>
+  </div>
+</header>
+
+<div id="chat"></div>
+
+<div id="preview-box">
+  <img id="preview-img" src="">
+  <button id="remove-img" onclick="clearImage()">×</button>
+  <span style="font-size: 13px; color: #9aa0a6;">Ảnh đã sẵn sàng gửi</span>
+</div>
+
+<div id="input-bar">
+  <label class="photo-btn" for="imgInput">📷</label>
+  <input type="file" id="imgInput" accept="image/*" style="display:none">
+  <input type="text" id="prompt" placeholder="Nhắn gì cho mình đi..." autocomplete="off">
+  <button class="action-btn" onclick="send()">Gửi</button>
+</div>
+
+<div id="modal">
+  <div class="modal-card">
+    <h3>🔑 Cài đặt mã API Gemini</h3>
+    <p style="font-size: 13px; color: #aaa; margin: 0;">Mã được lưu cục bộ ngay trên iPad của bạn, không gửi đi đâu khác.</p>
+    <input type="password" id="apiKeyInput" placeholder="Dán mã AQ... của bạn vào đây">
+    <button class="action-btn" style="width: 100%;" onclick="saveKey()">Lưu & Bắt đầu</button>
+  </div>
+</div>
+
+<script>
+const MODEL_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent";
+const SYSTEM_PROMPT = "Bạn là SuperGemini — người trợ lý và người bạn đồng hành toàn năng được cài đặt trực tiếp trên iPad của tôi. Hãy luôn xưng 'mình' và gọi tôi là 'bạn' với thái độ thân thiện, nhiệt tình, tự nhiên và nhanh nhẹn. Nhiệm vụ của bạn là hỗ trợ mọi việc tôi nhờ: phân tích hình ảnh, viết và sửa mã nguồn web (HTML/CSS/JS), giải đáp mọi thắc mắc. Tuyệt đối không tự nhận mình là 'mô hình ngôn ngữ' hay 'trợ lý văn bản'. Trả lời ngắn gọn, súc tích và đi thẳng vào kết quả.";
+
+let apiKey = localStorage.getItem("sg_api_key") || "";
+let chatHistory = JSON.parse(localStorage.getItem("sg_history") || "[]");
+let currentBase64 = null;
+let currentDataUrl = null;
+
+window.onload = function() {
+  if (!apiKey) {
+    openSettings();
+  }
+  renderSavedChat();
+};
+
+function openSettings() {
+  document.getElementById("apiKeyInput").value = apiKey;
+  document.getElementById("modal").style.display = "flex";
+}
+
+function saveKey() {
+  const val = document.getElementById("apiKeyInput").value.trim();
+  if (!val) return alert("Vui lòng dán mã API vào ô trống!");
+  apiKey = val;
+  localStorage.setItem("sg_api_key", apiKey);
+  document.getElementById("modal").style.display = "none";
+}
+
+function clearChat() {
+  if (confirm("Bạn có chắc muốn xóa toàn bộ lịch sử trò chuyện không?")) {
+    chatHistory = [];
+    localStorage.removeItem("sg_history");
+    renderSavedChat();
+  }
+}
+
+function renderSavedChat() {
+  const chatDiv = document.getElementById("chat");
+  chatDiv.innerHTML = "";
+  if (chatHistory.length === 0) {
+    appendBubble("Chào bạn! Mình là SuperGemini trên iPad của bạn đây. Hôm nay bạn cần mình giúp việc gì nào?", "ai");
+    return;
+  }
+  chatHistory.forEach(item => {
+    const textPart = item.parts.find(p => p.text);
+    const imgPart = item.parts.find(p => p.inlineData);
+    const imgSrc = imgPart ? `data:${imgPart.inlineData.mimeType};base64,${imgPart.inlineData.data}` : null;
+    appendBubble(textPart ? textPart.text : "", item.role === "user" ? "user" : "ai", imgSrc);
+  });
+}
+
+document.getElementById("imgInput").onchange = function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    currentDataUrl = ev.target.result;
+    currentBase64 = currentDataUrl.split(",")[1];
+    document.getElementById("preview-img").src = currentDataUrl;
+    document.getElementById("preview-box").style.display = "flex";
+  };
+  reader.readAsDataURL(file);
+};
+
+function clearImage() {
+  currentBase64 = null;
+  currentDataUrl = null;
+  document.getElementById("imgInput").value = "";
+  document.getElementById("preview-box").style.display = "none";
+}
+
+document.getElementById("prompt").addEventListener("keypress", function(e) {
+  if (e.key === "Enter") send();
+});
+
+async function send() {
+  if (!apiKey) return openSettings();
+  const input = document.getElementById("prompt");
+  const text = input.value.trim();
+  if (!text && !currentBase64) return;
+
+  appendBubble(text, "user", currentDataUrl);
+  input.value = "";
+
+  let userParts = [];
+  if (text) userParts.push({ text: text });
+  if (currentBase64) {
+    userParts.push({ inlineData: { mimeType: "image/jpeg", data: currentBase64 } });
+  }
+  clearImage();
+
+  chatHistory.push({ role: "user", parts: userParts });
+  const loadDiv = appendBubble("⏳ Mình đang suy nghĩ...", "ai loading");
+
+  try {
+    const response = await fetch(MODEL_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey
+      },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+        contents: chatHistory
+      })
+    });
+
+    const data = await response.json();
+    if (data.error) {
+      loadDiv.textContent = "❌ Lỗi API: " + data.error.message;
+      loadDiv.classList.remove("loading");
+      chatHistory.pop();
+      return;
+    }
+
+    const reply = data.candidates[0].content.parts[0].text;
+    loadDiv.textContent = reply;
+    loadDiv.classList.remove("loading");
+
+    chatHistory.push({ role: "model", parts: [{ text: reply }] });
+    localStorage.setItem("sg_history", JSON.stringify(chatHistory.slice(-20)));
+  } catch (err) {
+    loadDiv.textContent = "❌ Lỗi kết nối mạng: " + err.message;
+    loadDiv.classList.remove("loading");
+    chatHistory.pop();
+  }
+}
+
+function appendBubble(text, cls, imgSrc = null) {
+  const div = document.createElement("div");
+  div.className = "msg " + cls;
+  if (imgSrc) {
+    const img = document.createElement("img");
+    img.src = imgSrc;
+    div.appendChild(img);
+  }
+  if (text) {
+    const span = document.createElement("span");
+    span.textContent = text;
+    div.appendChild(span);
+  }
+  const chatDiv = document.getElementById("chat");
+  chatDiv.appendChild(div);
+  chatDiv.scrollTop = chatDiv.scrollHeight;
+  return div;
+}
+</script>
+</body>
+</html>
